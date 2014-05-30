@@ -1,0 +1,7 @@
+<ivy-module version="2.0">
+  <info organisation="camunda" module="release"/>
+  <dependencies>
+    <dependency org="ant-contrib" name="ant-contrib" rev="1.0b3" transitive="false" />
+    <dependency org="org.eclipse.mylyn.github" name="org.eclipse.egit.github.core" rev="2.1.5" />
+  </dependencies>
+</ivy-module>

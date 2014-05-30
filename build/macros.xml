@@ -1,0 +1,629 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="camunda BPM platform Releasemanagement macros" xmlns:ivy="antlib:org.apache.ivy.ant">
+
+  <!-- import asserts -->
+  <import file="asserts.xml" />
+
+  <!-- install and configure ivy dependency management and download specified dependencies in ivy.xml -->
+  <property name="ivy.install.version" value="2.3.0" />
+  <condition property="ivy.home" value="${env.IVY_HOME}">
+    <isset property="env.IVY_HOME" />
+  </condition>
+  <property name="ivy.home" value="${user.home}/.ant" />
+  <property name="ivy.jar.dir" value="${ivy.home}/lib" />
+  <property name="ivy.jar.file" value="${ivy.jar.dir}/ivy.jar" />
+
+  <mkdir dir="${ivy.jar.dir}"/>
+  <!-- download Ivy from web site so that it can be used even without any special installation -->
+  <get src="http://repo2.maven.org/maven2/org/apache/ivy/ivy/${ivy.install.version}/ivy-${ivy.install.version}.jar"
+       dest="${ivy.jar.file}" usetimestamp="true"/>
+
+  <!-- try to load ivy here from ivy home, in case the user has not already dropped
+          it into ant's lib dir (note that the latter copy will always take precedence).
+          We will not fail as long as local lib dir exists (it may be empty) and
+          ivy is in at least one of ant's lib dir or the local lib dir. -->
+  <path id="ivy.lib.path">
+    <fileset dir="${ivy.jar.dir}" includes="*.jar"/>
+  </path>
+
+  <taskdef resource="org/apache/ivy/ant/antlib.xml" uri="antlib:org.apache.ivy.ant" classpathref="ivy.lib.path"/>
+
+  <!-- download dependencies specified in ivy.xml and put them into pattern matching path-->
+  <ivy:retrieve type="jar" pattern="lib/ivy/[conf]/[artifact]-[revision].[ext]" sync="true" pathId="path.ivy.dependencies" />
+
+  <!-- ============ Typedefs =========== -->
+  <taskdef resource="net/sf/antcontrib/antlib.xml" classpathref="path.ivy.dependencies" />
+
+
+  <!-- ============ Properties macros ============ -->
+
+  <macrodef name="validate-property" description="Validate a property is set and not empty.">
+    <attribute name="propertyName"/>
+    <sequential>
+      <if>
+        <and>
+          <isset property="@{propertyName}" />
+          <length string="${@{propertyName}}" when="gt" length="0" />
+        </and>
+        <then>
+          <echo>Validated existence of property '@{propertyName}' (value = '${@{propertyName}}')</echo>
+        </then>
+        <else>
+          <echo message="'@{propertyName}' is a required property" level="error" />
+          <property name="errorValidation" value="true" />
+          <property name="validation.@{propertyName}" value="${@{propertyName}}" />
+        </else>
+      </if>
+    </sequential>
+  </macrodef>
+
+
+  <macrodef name="validate-propertyList" description="Validate a list of properties where a property can be further specified by pre-/postfix.">
+    <attribute name="propertyList"/>
+    <attribute name="prefix" default=""/>
+    <attribute name="postfix" default=""/>
+    <sequential>
+      <for list="@{propertyList}" param="property">
+        <sequential>
+          <if>
+            <and>
+              <isset property="@{prefix}@{property}@{postfix}" />
+              <length string="${@{prefix}@{property}@{postfix}}" when="gt" length="0" />
+            </and>
+            <then>
+              <echo>Validated existence of property '@{prefix}@{property}@{postfix}' (value = '${@{prefix}@{property}@{postfix}}')</echo>
+            </then>
+            <else>
+              <echo message="'@{prefix}@{property}@{postfix}' is a required property" level="error" />
+              <property name="errorValidation" value="true" />
+              <property name="validation.@{prefix}@{property}@{postfix}" value="${@{prefix}@{property}@{postfix}}" />
+            </else>
+          </if>
+        </sequential>
+      </for>
+    </sequential>
+  </macrodef>
+
+
+  <macrodef name="validate-file-available" description="Validate the given file exists.">
+    <attribute name="propertyName"/>
+    <sequential>
+      <if>
+        <and>
+          <isset property="@{propertyName}" />
+          <length string="${@{propertyName}}" when="gt" length="0" />
+          <available file="${@{propertyName}}" />
+        </and>
+        <then>
+          <echo>Validated existence of file specified by property '@{propertyName}' (value = '${@{propertyName}}')</echo>
+        </then>
+        <else>
+          <echo message="'@{propertyName}' is a required property" level="error" />
+          <property name="errorValidation" value="true" />
+          <property name="validation.@{propertyName}" value="${@{propertyName}}" />
+        </else>
+      </if>
+    </sequential>
+  </macrodef>
+
+
+  <!-- ============ Project macros ============ -->
+  <macrodef name = "projects.clean" description="Deletes all project directories.">
+    <attribute name = "projects" />
+    <sequential>
+      <for list="@{projects}" param="project.dir">
+        <sequential>
+          <delete dir="@{project.dir}" />
+        </sequential>
+      </for>
+    </sequential>
+  </macrodef>
+
+
+  <macrodef name = "projects.clone" description="Clones all projects in the directory named after ${project} using the matching git.url.${project} url.">
+    <attribute name = "projects" />
+    <sequential>
+      <for list="@{projects}" param="project.dir">
+        <sequential>
+          <git-clone repository="${git.url.@{project.dir}}" dir="@{project.dir}" />
+        </sequential>
+      </for>
+    </sequential>
+  </macrodef>
+
+
+  <macrodef name = "projects.clone.branchOrTag" description="Clones all projects and switches to given branch or tag.">
+    <attribute name = "projects" />
+    <attribute name = "branchOrTag" />
+    <sequential>
+      <for list="@{projects}" param="project.dir">
+        <sequential>
+          <git-clone repository="${git.url.@{project.dir}}" dir="@{project.dir}" />
+          <git-checkout branchOrTag="@{branchOrTag}" dir="@{project.dir}" />
+        </sequential>
+      </for>
+    </sequential>
+  </macrodef>
+
+
+  <macrodef name = "projects.commit" description="Commit all changes in all project directories.">
+    <attribute name = "projects" />
+    <attribute name = "message" />
+    <sequential>
+      <for list="@{projects}" param="project.dir">
+        <sequential>
+          <git-commit dir="@{project.dir}" message="@{message}"/>
+        </sequential>
+      </for>
+    </sequential>
+  </macrodef>
+
+
+  <macrodef name = "projects.tag" description="Tag the actual HEAD commit for all projects.">
+    <attribute name = "projects" />
+    <attribute name = "tag" />
+    <attribute name = "message" />
+    <attribute name = "overrideExistingTag" default="false" />
+    <sequential>
+      <for list="@{projects}" param="project.dir">
+        <sequential>
+          <git-tag dir="@{project.dir}" tag="@{tag}" message="@{message}" overrideExistingTag="@{overrideExistingTag}"/>
+        </sequential>
+      </for>
+    </sequential>
+  </macrodef>
+
+
+  <macrodef name="projects.push" description="Push all changes back to remote repositories.">
+    <attribute name = "projects" />
+    <attribute name = "to-branch" />
+    <attribute name = "withTags" default="false" />
+    <sequential>
+      <for list="@{projects}" param="project.dir">
+        <sequential>
+          <git-push dir="@{project.dir}" branch="@{to-branch}" withTags="@{withTags}" />
+        </sequential>
+      </for>
+    </sequential>
+  </macrodef>
+
+
+  <!-- ============ Git macros ============ -->
+  <!-- using macros for git, because the ant tasks in jgit suck, no push / commit etc. -->
+  <macrodef name = "git" description="Basic git macro. All other git macros depends on it.">
+    <attribute name = "command" />
+    <attribute name = "workingDir" default = "" />
+    <attribute name="failOnError" default="true"/>
+    <element name = "args" optional = "true" />
+    <sequential>
+      <exec executable = "git" dir = "@{workingDir}" failonerror = "@{failOnError}">
+        <arg value = "@{command}" />
+        <args/>
+      </exec>
+    </sequential>
+  </macrodef>
+
+
+  <macrodef name = "git-clone-pull" description="Clone a repository into given directory and pull afterwards.">
+    <attribute name = "repository" />
+    <attribute name = "dir" />
+    <sequential>
+      <git-clone repository="@{repository}" dir="@{dir}" />
+      <git-pull dir = "@{dir}" />
+    </sequential>
+  </macrodef>
+
+
+  <macrodef name = "git-clone" description="Clone a repository into given directory.">
+    <attribute name = "repository" />
+    <attribute name = "dir" />
+    <sequential>
+      <echo message = "Cloning @{repository} into @{dir}" />
+      <git command = "clone">
+        <args>
+          <arg value = "@{repository}" />
+          <arg value = "@{dir}" />
+        </args>
+      </git>
+      <echo message = "Cloned @{repository} into @{dir}" />
+      <echo message = "Latest commit is: " />
+      <git command = "--git-dir">
+        <args>
+          <arg value = "@{dir}/.git" />
+          <arg value = "log" />
+          <arg value = "--oneline" />
+          <arg value = "-1" />
+        </args>
+      </git>
+    </sequential>
+  </macrodef>
+
+
+  <macrodef name = "git-pull" description="Pulls from remote repository.">
+    <attribute name = "dir" />
+    <sequential>
+      <echo message = "Pulling @{dir}" />
+      <git command = "pull" workingDir = "@{dir}" />
+      <echo message = "Finished pulling in @{dir}" />
+    </sequential>
+  </macrodef>
+
+
+  <macrodef name = "git-checkout" description="Checkout a branch or tag from a remote repository already cloned in given directory.">
+    <attribute name = "dir" />
+    <attribute name = "branchOrTag" default="master" />
+    <sequential>
+      <echo message = "Checking out @{branchOrTag} in @{dir}" />
+      <git command = "checkout" workingDir="@{dir}">
+        <args>
+          <arg value = "@{branchOrTag}" />
+        </args>
+      </git>
+      <echo message = "Finished checkout of @{branchOrTag} in @{dir}" />
+    </sequential>
+  </macrodef>
+
+
+  <macrodef name= "git-create-branch-from-tag" description="Checkout a tag and create a branch from it so it is not in detached HEAD state.">
+    <attribute name = "dir" />
+    <attribute name = "branch" />
+    <attribute name = "tag" />
+    <sequential>
+      <echo message = "Creating branch @{branch} based on tag @{tag} in @{dir}" />
+      <git command = "checkout" workingDir="@{dir}">
+        <args>
+          <arg value = "-b" />
+          <arg value = "@{branch}" />
+          <arg value = "@{tag}" />
+        </args>
+      </git>
+      <echo message = "Created branch @{branch} based on tag @{tag} in @{dir}." />
+    </sequential>
+  </macrodef>
+
+
+  <macrodef name= "git-create-branch" description="Checkout/create a branch.">
+    <attribute name = "dir" />
+    <attribute name = "branch" default="master" />
+    <sequential>
+      <echo message = "Checking out @{branch} in @{dir}" />
+      <git command = "checkout" workingDir="@{dir}">
+        <args>
+          <arg value = "-b" />
+          <arg value = "@{branch}" />
+        </args>
+      </git>
+      <echo message = "Finished checkout of @{branch} in @{dir}." />
+      <echo message = "Switching to branch @{branch} in @{dir}." />
+    </sequential>
+  </macrodef>
+
+
+  <macrodef name= "git-reset-head" description="Reset given repository HEAD on given branch by a number of commits.">
+    <attribute name = "dir" />
+    <attribute name = "branch" default="master" />
+    <attribute name = "numOfCommits" default="1" />
+    <sequential>
+      <echo message = "Resetting head of @{branch} in @{dir} by @{numOfCommits}" />
+      <git command = "checkout" workingDir="@{dir}">
+        <args>
+          <arg value = "@{branch}" />
+        </args>
+      </git>
+      <git command="reset" workingDir="@{dir}">
+        <args>
+          <arg value = "HEAD~@{numOfCommits}" />
+          <arg value ="--hard" />
+        </args>
+      </git>
+      <echo message = "Finished resetting branch @{branch} in @{dir}." />
+    </sequential>
+  </macrodef>
+
+
+  <macrodef name = "git-tag" description="Tag commit in given repository.">
+    <attribute name = "dir" />
+    <attribute name = "tag" />
+    <attribute name = "message" />
+    <attribute name = "overrideExistingTag" default="false" />
+    <sequential>
+      <if>
+        <istrue value="@{overrideExistingTag}" />
+        <then>
+          <!--  delete tag locally -->
+          <echo message = "Deleting tag '@{tag} locally." />
+          <git command="tag" workingDir="@{dir}">
+            <args>
+              <arg value = "-d" />
+              <arg value = "@{tag}" />
+            </args>
+          </git>
+          <!--  delete tag remotely -->
+          <echo message = "Deleting tag '@{tag} remotely." />
+          <git command="push" workingDir="@{dir}">
+            <args>
+              <arg value = "origin" />
+              <arg value = ":refs/tags/@{tag}" />
+            </args>
+          </git>
+        </then>
+      </if>
+      <echo message = "Tagging version @{tag} in @{dir}" />
+      <git command="tag" workingDir="@{dir}">
+        <args>
+          <arg value = "-a" />
+          <arg value = "@{tag}" />
+          <arg value = "-m '@{message}'" />
+        </args>
+      </git>
+      <echo message = "Finished tagging version @{tag} in @{dir}" />
+    </sequential>
+  </macrodef>
+
+
+  <macrodef name = "git-push" description="Push given repository back to location/branch with/-out tags. Requires property 'pushToRemote' set to true!!!">
+    <attribute name = "dir" />
+    <attribute name = "remote" default="origin" />
+    <attribute name = "branch" default="master" />
+    <attribute name = "withTags" default="false" />
+    <sequential>
+
+      <if>
+        <istrue value="${pushToRemote}" />
+        <then>
+          <echo message = "Pushing project @{dir} to @{remote} @{branch} with tags: @{withTags}" />
+
+          <!-- workaround because empty arg value causes an error -->
+          <if>
+            <istrue value="@{withTags}" />
+            <then>
+              <git command = "push" workingDir="@{dir}">
+                <args>
+                  <arg value = "@{remote}" />
+                  <arg value = "@{branch}" />
+                  <arg value = "--tags" />
+                </args>
+              </git>
+            </then>
+            <else>
+              <git command = "push" workingDir="@{dir}">
+                <args>
+                  <arg value = "@{remote}" />
+                  <arg value = "@{branch}" />
+                </args>
+              </git>
+            </else>
+          </if>
+
+          <echo message = "Successfully pushed @{dir} to @{remote} @{branch}" />
+        </then>
+        <else>
+          <echo message = "ATTENTION!!! SKIP pushing project @{dir} to @{remote} @{branch} with tags: @{withTags} !" />
+        </else>
+      </if>
+
+    </sequential>
+  </macrodef>
+
+
+  <macrodef name = "git-commit" description="Commit everything in given repository.">
+    <attribute name = "dir" />
+    <attribute name = "message" />
+    <sequential>
+      <echo>Committing @{dir}.</echo>
+      <git command="commit" workingDir="@{dir}">
+        <args>
+          <arg value = "-a" />
+          <arg value = "-m @{message}" />
+        </args>
+      </git>
+      <echo>Successfully committed @{dir}.</echo>
+    </sequential>
+  </macrodef>
+
+
+  <macrodef name = "git-branch-exists">
+    <attribute name = "dir" />
+    <attribute name = "branch" />
+    <attribute name = "remote" />
+    <sequential>
+      <if>
+        <istrue value="@{remote}"/>
+        <then>
+          <git command="ls-remote" workingDir="@{dir}">
+            <args>
+              <arg value = "--heads" />
+              <arg value = "--exit-code" />
+              <arg value = "." />
+              <arg value = "@{branch}" />
+            </args>
+          </git>
+        </then>
+        <else>
+          <git command="show-ref" workingDir="@{dir}">
+            <args>
+              <arg value = "--verify" />
+              <arg value = "--heads" />
+              <arg value = "@{branch}" />
+            </args>
+          </git>
+        </else>
+      </if>
+    </sequential>
+  </macrodef>
+
+
+  <macrodef name = "git-tag-exists">
+    <attribute name = "dir" />
+    <attribute name = "tag" />
+    <attribute name = "remote" />
+    <sequential>
+      <if>
+        <istrue value="@{remote}"/>
+        <then>
+          <git command="ls-remote" workingDir="@{dir}">
+            <args>
+              <arg value = "--tags" />
+              <arg value = "--exit-code" />
+              <arg value = "." />
+              <arg value = "@{tag}" />
+            </args>
+          </git>
+        </then>
+        <else>
+          <git command="show-ref" workingDir="@{dir}">
+            <args>
+              <arg value = "--verify" />
+              <arg value = "--tags" />
+              <arg value = "@{tag}" />
+            </args>
+          </git>
+        </else>
+      </if>
+    </sequential>
+  </macrodef>
+
+
+  <!-- ============ Maven macro ============ -->
+  <macrodef name="maven">
+    <attribute name="options" default="" />
+    <attribute name="goals" />
+    <attribute name="basedir" />
+    <attribute name="settingsfile" default="${mvn.settings.file}" />
+    <attribute name="maven.repo.local" default="${mvn.repo.local}" />
+    <attribute name="debug" default="false" />
+    <element name="args" implicit="true" optional="true" />
+    <sequential>
+      <if>
+        <istrue value="@{debug}" />
+        <then>
+          <local name="debugOptions" />
+          <property name="debugOptions" value="-X -e" />
+        </then>
+        <else>
+          <property name="debugOptions" value="" />
+        </else>
+      </if>
+      <java classname="org.codehaus.classworlds.Launcher" fork="true"
+            dir="@{basedir}" failonerror="true" timeout="3600000">
+        <jvmarg value="-Xmx512m"/>
+        <jvmarg value="-XX:PermSize=256m"/>
+        <jvmarg value="-XX:MaxPermSize=256m"/>
+        <classpath>
+          <fileset dir="${mvn.home}/boot">
+            <include name="*.jar" />
+          </fileset>
+          <fileset dir="${mvn.home}/lib">
+            <include name="*.jar" />
+          </fileset>
+        </classpath>
+
+        <sysproperty key="classworlds.conf" value="${mvn.home}/bin/m2.conf" />
+        <sysproperty key="maven.home" value="${mvn.home}" />
+        <arg line="--settings=@{settingsfile} -Dmaven.repo.local=@{maven.repo.local} --batch-mode @{options} @{goals} ${debugOptions}" />
+      </java>
+    </sequential>
+  </macrodef>
+
+  <!-- ============ Nexus macros ============ -->
+  <macrodef name="nexus-get-artifact">
+    <attribute name="username" default=""/>
+    <attribute name="password" default=""/>
+    <attribute name="url"/>
+    <attribute name="groupId"/>
+    <attribute name="artifactId"/>
+    <attribute name="version"/>
+    <attribute name="repository"/>
+    <attribute name="extension" default="jar"/>
+    <attribute name="dest" default="nexus-download"/>
+    <attribute name="verbose" default="false"/>
+    <attribute name="skipexisting" default="true"/>
+
+    <sequential>
+      <echo message="Getting artifact '@{groupId}:@{artifactId}:@{version}:@{extension}'' from repository '@{url}/content/repositories/@{repository}'" />
+      <if>
+        <and>
+          <isset property="username" />
+          <length string="${@{username}}" when="gt" length="0" />
+          <isset property="password" />
+          <length string="${@{password}}" when="gt" length="0" />
+        </and>
+        <then>
+          <get username="${username}" password="@{password}"
+           src="@{url}/service/local/artifact/maven/redirect?r=@{repository}&amp;g=@{groupId}&amp;a=@{artifactId}&amp;v=@{version}&amp;e=@{extension}"
+           dest="@{dest}/@{artifactId}.@{extension}"
+           usetimestamp="true" verbose="@{verbose}" skipexisting="@{skipexisting}" />
+        </then>
+        <else>
+          <get src="@{url}/service/local/artifact/maven/redirect?r=@{repository}&amp;g=@{groupId}&amp;a=@{artifactId}&amp;v=@{version}&amp;e=@{extension}"
+           dest="@{dest}/@{artifactId}.@{extension}"
+           usetimestamp="true" verbose="@{verbose}" skipexisting="@{skipexisting}" />
+        </else>
+      </if>
+      
+    </sequential>
+  </macrodef>
+
+  <!-- ============ helper macro ============ -->
+  <macrodef name="echo-classpath">
+    <attribute name="classpathref" />
+    <sequential>
+      <pathconvert property="expanded.classpathref" refid="@{classpathref}"/>
+      <echo message="${expanded.classpathref}" file="classpath.txt"/>
+    </sequential>
+  </macrodef>
+
+
+  <!-- ============ grand macro ============ -->
+  <macrodef name="grand-create-graph" description="Generate graph of ant targets using graphviz and visualize it as png image.">
+    <attribute name="buildfile" default="${ant.file}" />
+    <element name="filters" optional="yes" />
+    <sequential>
+      <property environment="env"/>
+      <available file="dot" filepath="${env.PATH}" type="file" property="dot.present" />
+      <fail message="dot (graphviz) is not available on PATH. Please install graphviz or add it to PATH!" unless="dot.present" />
+
+      <taskdef resource="task.properties" classpath="lib/grand-1.8.jar"/>
+
+      <property name="build.file.overview.dot" value="@{buildfile}-overview.dot" />
+      <property name="build.file.overview.png" value="@{buildfile}-overview.png" />
+
+      <echo message="Running grand on @{buildfile} to ${build.file.overview.png} via ${build.file.overview.dot}"/>
+      <grand buildfile="@{buildfile}" output="${build.file.overview.dot}">
+        <filters />
+      </grand>
+      <exec executable="dot">
+        <arg line="-Tpng -o ${build.file.overview.png} ${build.file.overview.dot}"/>
+      </exec>
+
+      <!-- open browser to display png -->
+      <if>
+        <available file="firefox" filepath="${env.PATH}" type="file" property="firefox.present" />
+        <then>
+          <exec executable="firefox">
+            <arg line="${build.file.overview.png}"/>
+          </exec>
+        </then>
+        <elseif>
+          <available file="chrome" filepath="${env.PATH}" type="file" property="chrome.present" />
+          <then>
+            <exec executable="chrome">
+              <arg line="${build.file.overview.png}"/>
+            </exec>
+          </then>
+        </elseif>
+        <elseif>
+          <available file="chromium" filepath="${env.PATH}" type="file" property="chromium.present" />
+          <then>
+            <exec executable="chromium">
+              <arg line="${build.file.overview.png}"/>
+            </exec>
+          </then>
+        </elseif>
+        <else>
+          <echo message="Unable to find Firefox, Chrome or Chromium on path to display generated png." />
+        </else>
+      </if>
+    </sequential>
+  </macrodef>
+</project>

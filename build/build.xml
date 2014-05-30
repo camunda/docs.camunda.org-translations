@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="camunda BPM platform - release documentation" default="build" basedir=".">
+
+
+  <import file="macros.xml" />
+
+  <target name="build" depends="
+    init,
+    validate,
+    clean,
+    docs.checkout,
+    translations.copy,
+    docs.generate" />
+
+  <target name="init">
+    <!-- the locale to be build -->
+    <property name="translations.locale" value="es_ES" />
+    <!-- the location where the docs should be checked out -->
+    <property name="docs.dir" value="docs" />
+    <!-- the url of the docs git repository -->
+    <property name="docs.git.repo.url" value="https://github.com/camunda/docs.camunda.org.git" />
+    <!-- the version of the docs this translation is based on -->
+    <loadfile property="docs.version" srcFile="../${translations.locale}/docs.version.txt">
+      <filterchain>
+        <striplinebreaks/>
+      </filterchain>
+    </loadfile>
+  </target>
+
+  <target name="validate">
+    <validate-property propertyName="translations.locale" />
+    <validate-property propertyName="docs.dir" />
+    <validate-property propertyName="docs.git.repo.url" />
+    <validate-property propertyName="docs.version" />
+  </target>
+
+  <target name="clean">
+    <delete dir="${docs.dir}"/>
+  </target>
+
+  <target name="docs.checkout">
+
+    <!-- clone the docs -->
+    <git-clone repository="${docs.git.repo.url}" dir="${docs.dir}" />
+
+    <!-- checkout the version (commit) -->
+    <git-checkout dir="${docs.dir}" branchOrTag="${docs.version}" />
+
+  </target>
+
+
+  <target name="translations.copy">
+
+    <!-- overwrite docs with translations -->
+    <copy todir="${docs.dir}/site" overwrite="true">
+      <fileset dir="../${translations.locale}/"/>
+    </copy>
+
+  </target>
+
+  <target name="docs.generate">
+    <!-- check if npm available, otherwise fail -->
+    <available file="npm" type="file" property="npm.present" />
+    <available file="${docs.dir}/site/node_modules/docpad/bin/docpad" type="file" property="docpad.present" />
+
+    <fail message="Error! Could not access 'npm' or 'docpad' via $PATH variable.">
+      <condition>
+        <or>
+          <isset property="npm.present"/>
+          <isset property="docpad.present"/>
+        </or>
+      </condition>
+    </fail>
+
+    <exec executable="npm" dir="${docs.dir}/site" failonerror="true">
+      <arg value="install" />
+    </exec>
+    <exec executable="./node_modules/docpad/bin/docpad" dir="${docs.dir}/site" failonerror="true">
+      <arg value="generate" />
+    </exec>
+
+  </target>
+</project>

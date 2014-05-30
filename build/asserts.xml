@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="Assertions">
+
+
+  <macrodef name="assert-file-or-dir-exists">
+    <attribute name="file"/>
+    <sequential>
+      <echo message="Checking for existence of file: @{file}"/>
+      <fail message="File '@{file}' does not exist.">
+        <condition>
+          <not><available file="@{file}"/></not>
+        </condition>
+      </fail>
+    </sequential>
+  </macrodef>
+
+
+  <macrodef name="assert-file-contains">
+    <attribute name="basedir"/>
+    <attribute name="file"/>
+    <attribute name="text"/>
+
+    <sequential>
+      <echo message="Checking if file '@{file}' contains text '@{text}'"/>
+      <fail message="@{basedir}:@{file} should contain @{text}">
+        <condition>
+          <resourcecount when="equal" count="0">
+            <fileset dir="@{basedir}">
+              <and>
+                <filename name="**/@{file}" />
+                <contains text="@{text}" casesensitive="no" />
+              </and>
+            </fileset>
+          </resourcecount>
+        </condition>
+      </fail>
+    </sequential>
+  </macrodef>
+
+</project>
