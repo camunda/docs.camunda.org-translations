@@ -3,7 +3,7 @@
 This repository is used to develop community maintained translations of the camunda BPM
 documentation.
 
-The translations are hosted at: TBD.
+The translations are hosted at: http://stage.docs.camunda.org/translations/es_ES/.
 
 ## How to build a translation?
 
